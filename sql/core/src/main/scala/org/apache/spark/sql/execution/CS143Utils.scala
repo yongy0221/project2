@@ -129,7 +129,13 @@ object CS143Utils {
     */
   def getUdfFromExpressions(expressions: Seq[Expression]): ScalaUdf = {
     /* IMPLEMENT THIS METHOD */
-    null
+    val len:Int = expressions.length;
+    if(len>0) {
+      if(expressions.reverse.head.isInstanceOf[ScalaUdf]) {
+        return expressions.reverse.head.asInstanceOf[ScalaUdf]
+      }
+    }
+    return null
   }
 
   /**
@@ -225,12 +231,27 @@ object CachingIteratorGenerator {
 
       def hasNext() = {
         /* IMPLEMENT THIS METHOD */
-        false
+        if(input.hasNext) {
+          true
+        }
+        else {
+          false
+        }
       }
 
       def next() = {
         /* IMPLEMENT THIS METHOD */
-        null
+        if (input.hasNext) {
+          val row = input.next()
+          val cacheKey = cacheKeyProjection(row)
+
+          if (!cache.containsKey(cacheKey)) {
+            cache.put(cacheKey, udfProject(row))
+          }
+          Row.fromSeq(preUdfProjection(row) ++ cache.get(cacheKey) ++ postUdfProjection(row))
+        } else {
+          null
+        }
       }
     }
   }
