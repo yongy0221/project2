@@ -54,13 +54,25 @@ case class SpillableAggregate(
                                 resultAttribute: AttributeReference)
 
   /** Physical aggregator generated from a logical expression.  */
-  private[this] val aggregator: ComputedAggregate = null //IMPLEMENT ME
+  private[this] val aggregator: ComputedAggregate = { 
+      val temp = aggregateExpressions.flatMap { agg =>
+      agg.collect {
+        case a: AggregateExpression =>
+          ComputedAggregate(
+            a,
+            BindReferences.bindReference(a, child.output),
+            AttributeReference(s"aggResult:$a", a.dataType, a.nullable)())
+    }
+  }.toArray
+    temp(0)
+  } //IMPLEMENT ME
+
 
   /** Schema of the aggregate.  */
-  private[this] val aggregatorSchema: AttributeReference = null //IMPLEMENT ME
+  private[this] val aggregatorSchema: AttributeReference = aggregator.resultAttribute //IMPLEMENT ME
 
   /** Creates a new aggregator instance.  */
-  private[this] def newAggregatorInstance(): AggregateFunction = null //IMPLEMENT ME
+  private[this] def newAggregatorInstance(): AggregateFunction = aggregator.aggregate.newInstance() //IMPLEMENT ME
 
   /** Named attributes used to substitute grouping attributes in the final result. */
   private[this] val namedGroups = groupingExpressions.map {
@@ -122,12 +134,18 @@ case class SpillableAggregate(
 
       def hasNext() = {
         /* IMPLEMENT THIS METHOD */
-        false
+        if(aggregateResult.hasNext)
+          true
+        else 
+          false
       }
 
       def next() = {
         /* IMPLEMENT THIS METHOD */
-        null
+        if (!hasNext) 
+          throw new java.util.NoSuchElementException
+
+        aggregateResult.next()
       }
 
       /**
@@ -137,7 +155,37 @@ case class SpillableAggregate(
         */
       private def aggregate(): Iterator[Row] = {
         /* IMPLEMENT THIS METHOD */
-        null
+        var currentFunc:AggregateFunction = null
+        
+        if (groupingExpressions.isEmpty) {
+          currentFunc = newAggregatorInstance()
+
+          while(data.hasNext) {
+            currentFunc.update(data.next())
+          }
+
+          val resultProjection = new InterpretedProjection(resultExpression, Seq(aggregatorSchema))
+          Iterator(resultProjection(Row(currentFunc.eval(EmptyRow))))
+        } 
+        else {
+          while(data.hasNext) {
+            var currRow = data.next()
+            var projectRow = groupingProjection(currRow)
+            currentFunc = currentAggregationTable(projectRow)
+
+            if (currentFunc == null) {
+              currentFunc = newAggregatorInstance()
+              currentFunc.update(currRow)
+              currentAggregationTable.update(projectRow, currentFunc)
+            } 
+            else 
+              currentFunc.update(currRow)   
+          }
+
+          AggregateIteratorGenerator(
+          resultExpression,
+          Seq(aggregatorSchema) ++ namedGroups.map(_._2))(currentAggregationTable.iterator)  
+        }
       }
 
       /**
