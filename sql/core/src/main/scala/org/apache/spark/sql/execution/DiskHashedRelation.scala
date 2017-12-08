@@ -81,11 +81,14 @@ private[sql] class DiskPartition (
     */
   def insert(row: Row) = {
     /* IMPLEMENT THIS METHOD */
+    //  if input is closed, throw an exception!
     if(inputClosed)
       throw new SparkException("Cannot insert row into a partition after input is closed!")
 
+    //  add a new row
     data.add(row)
 
+    //  if the size of the partition exceeds the blockSize, spill to disk
     if(measurePartitionSize() > blockSize) {
       spillPartitionToDisk()
       data.clear()
