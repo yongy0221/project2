@@ -53,11 +53,12 @@ protected [sql] final class GeneralDiskHashedRelation(partitions: Array[DiskPart
 
   override def getIterator() = {
     /* IMPLEMENT THIS METHOD */
-    null
+    partitions.iterator
   }
 
   override def closeAllPartitions() = {
     /* IMPLEMENT THIS METHOD */
+    partitions.foreach(partition => partition.closePartition())
   }
 }
 
@@ -80,6 +81,15 @@ private[sql] class DiskPartition (
     */
   def insert(row: Row) = {
     /* IMPLEMENT THIS METHOD */
+    if(inputClosed)
+      throw new SparkException("Cannot insert row into a partition after input is closed!")
+
+    data.add(row)
+
+    if(measurePartitionSize() > blockSize) {
+      spillPartitionToDisk()
+      data.clear()
+    }
   }
 
   /**
@@ -123,12 +133,23 @@ private[sql] class DiskPartition (
 
       override def next() = {
         /* IMPLEMENT THIS METHOD */
-        null
+        if(currentIterator.hasNext) 
+          currentIterator.next()
+        else 
+          null
       }
 
       override def hasNext() = {
         /* IMPLEMENT THIS METHOD */
-        false
+        //  if currentIterator has next, return true
+        if(currentIterator.hasNext)
+          true
+        //  if currentIterator doesn't have next but if there's a chunk left in disk, 
+        //  fetch it and return true
+        else if(fetchNextChunk())
+          true
+        else
+          false
       }
 
       /**
@@ -139,7 +160,17 @@ private[sql] class DiskPartition (
         */
       private[this] def fetchNextChunk(): Boolean = {
         /* IMPLEMENT THIS METHOD */
-        false
+        //  if there is a chunk in spilled to disk
+        if(chunkSizeIterator.hasNext) {
+          //  fetch the next chunk
+          byteArray = CS143Utils.getNextChunkBytes(inStream, chunkSizeIterator.next(), byteArray)
+          //  updates the iterator
+          currentIterator = CS143Utils.getListFromBytes(byteArray).iterator.asScala
+          true
+        }
+        else {
+          false
+        }
       }
     }
   }
@@ -154,6 +185,13 @@ private[sql] class DiskPartition (
   def closeInput() = {
     /* IMPLEMENT THIS METHOD */
     inputClosed = true
+    outStream.close()
+
+    //  !data.isEmpty() checks the case when the data has not been written but it is actually empty
+    if(!writtenToDisk && !data.isEmpty()) {
+      spillPartitionToDisk()
+      data.clear()
+    }    
   }
 
 
@@ -190,6 +228,20 @@ private[sql] object DiskHashedRelation {
               size: Int = 64,
               blockSize: Int = 64000) = {
     /* IMPLEMENT THIS METHOD */
-    null
+    val partitionArr: Array[DiskPartition] = new Array[DiskPartition](size)
+
+    for(i <- 0 until size)
+      partitionArr(i) = new DiskPartition("DiskPartition" + i, blockSize)
+
+    while(input.hasNext) {
+      val row = input.next()
+      val i = keyGenerator(row).hashCode % size
+      partitionArr(i).insert(row)
+    }
+
+    for(i <- 0 until size)
+      partitionArr(i).closeInput()
+
+    new GeneralDiskHashedRelation(partitionArr)
   }
 }
