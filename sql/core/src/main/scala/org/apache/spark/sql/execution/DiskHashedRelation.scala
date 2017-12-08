@@ -82,9 +82,9 @@ private[sql] class DiskPartition (
   def insert(row: Row) = {
     /* IMPLEMENT THIS METHOD */
     //  if input is closed, throw an exception!
-    if(inputClosed)
+    if(inputClosed) {
       throw new SparkException("Cannot insert row into a partition after input is closed!")
-
+    }
     //  add a new row
     data.add(row)
 
@@ -136,10 +136,12 @@ private[sql] class DiskPartition (
 
       override def next() = {
         /* IMPLEMENT THIS METHOD */
-        if(currentIterator.hasNext) 
+        if(currentIterator.hasNext) {
           currentIterator.next()
-        else 
+        }
+        else {
           null
+        }
       }
 
       override def hasNext() = {
