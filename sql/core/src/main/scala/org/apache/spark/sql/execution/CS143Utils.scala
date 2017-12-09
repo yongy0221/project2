@@ -279,15 +279,16 @@ object AggregateIteratorGenerator {
 
       def next() = {
         /* IMPLEMENT THIS METHOD */
-        if (!hasNext)
+        if(input.hasNext) {
+          val tuple = input.next()
+          val row = tuple._1
+          val aggregateFunc = tuple._2
+          val aggregateResult = Row(aggregateFunc.eval(EmptyRow))
+          postAggregateProjection(new JoinedRow4(aggregateResult, row))
+        }
+        else {
           throw new java.util.NoSuchElementException
-
-        val currRowTuple = input.next()
-        val currRow = currRowTuple._1
-        val aggregateFunc = currRowTuple._2
-        val aggregateResult = Row(aggregateFunc.eval(EmptyRow))
-
-        postAggregateProjection(new JoinedRow(aggregateResult, currRow))
+        }
       }
     }
   }

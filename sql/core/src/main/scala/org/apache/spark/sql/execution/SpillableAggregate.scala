@@ -142,10 +142,10 @@ case class SpillableAggregate(
 
       def next() = {
         /* IMPLEMENT THIS METHOD */
-        if (!hasNext) 
+        if(hasNext)
+          aggregateResult.next()
+        else
           throw new java.util.NoSuchElementException
-
-        aggregateResult.next()
       }
 
       /**
@@ -155,36 +155,36 @@ case class SpillableAggregate(
         */
       private def aggregate(): Iterator[Row] = {
         /* IMPLEMENT THIS METHOD */
-        var currentFunc:AggregateFunction = null
+        var aggregateFunc:AggregateFunction = null
         
-        if (groupingExpressions.isEmpty) {
-          currentFunc = newAggregatorInstance()
+        if (aggregateExpressions.isEmpty) {
+          aggregateFunc = newAggregatorInstance()
 
           while(data.hasNext) {
-            currentFunc.update(data.next())
+            var row = data.next()
+            aggregateFunc.update(row)
           }
 
           val resultProjection = new InterpretedProjection(resultExpression, Seq(aggregatorSchema))
-          Iterator(resultProjection(Row(currentFunc.eval(EmptyRow))))
+          Iterator(resultProjection(Row(aggregateFunc.eval(EmptyRow))))
         } 
         else {
           while(data.hasNext) {
-            var currRow = data.next()
-            var projectRow = groupingProjection(currRow)
-            currentFunc = currentAggregationTable(projectRow)
+            var row = data.next()
+            var projection = groupingProjection(row)
+            aggregateFunc = currentAggregationTable(projection)
 
-            if (currentFunc == null) {
-              currentFunc = newAggregatorInstance()
-              currentFunc.update(currRow)
-              currentAggregationTable.update(projectRow, currentFunc)
+            if(aggregateFunc != null) {
+              aggregateFunc.update(row)
+            }
+            else {
+              aggregateFunc = newAggregatorInstance()
+              aggregateFunc.update(row)
+              currentAggregationTable.update(projection, aggregateFunc)
             } 
-            else 
-              currentFunc.update(currRow)   
           }
 
-          AggregateIteratorGenerator(
-          resultExpression,
-          Seq(aggregatorSchema) ++ namedGroups.map(_._2))(currentAggregationTable.iterator)  
+          AggregateIteratorGenerator(resultExpression, Seq(aggregatorSchema) ++ namedGroups.map(_._2))(currentAggregationTable.iterator)  
         }
       }
 
